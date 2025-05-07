@@ -30,6 +30,13 @@ from models import (
     calculate_metrics,
     create_sequences
 )
+from profit_calculator import calculate_profit_table
+from forecast_plots import (
+    plot_prophet_forecast,
+    plot_arima_forecast,
+    plot_xgboost_forecast,
+    plot_lstm_forecast
+)
 
 # Helper functions
 def optimize_arima_parameters(data, max_p=5, max_d=2, max_q=5):
@@ -447,7 +454,7 @@ with main_col:
                 st.write(forecast.tail())
                 
                 st.write(f'Forecast plot for {n_years} years')
-                fig1 = plot_plotly(m, forecast)
+                fig1 = plot_prophet_forecast(m, forecast, n_years, data, selected_stock)
                 st.plotly_chart(fig1)
 
                 st.write("Forecast components")
@@ -480,10 +487,8 @@ with main_col:
 
                 # After the forecast section, add the profit calculator
                 st.subheader('Investment Profit Calculator')
-                
                 # Get current price
                 current_price = data[selected_stock].iloc[-1]
-                
                 # Investment input
                 col1, col2 = st.columns(2)
                 with col1:
@@ -491,47 +496,12 @@ with main_col:
                                                       min_value=100.0, 
                                                       value=1000.0, 
                                                       step=100.0)
-                
                 with col2:
                     coins_bought = investment_amount / current_price
                     st.write(f'Coins you can buy: {coins_bought:.8f}')
-                
                 # Create profit calculation table
                 st.write('Potential Profit Calculations')
-                
-                # Get forecasted prices for different timeframes
-                today = pd.Timestamp.now()
-                forecast_dates = {
-                    '1 Week': today + pd.Timedelta(weeks=1),
-                    '1 Month': today + pd.Timedelta(days=30),
-                    '3 Months': today + pd.Timedelta(days=90),
-                    '6 Months': today + pd.Timedelta(days=180),
-                    '1 Year': today + pd.Timedelta(days=365)
-                }
-                
-                # Create profit table
-                profit_data = []
-                
-                for period, future_date in forecast_dates.items():
-                    # Find the closest date in our forecast
-                    closest_date = forecast['ds'].iloc[(forecast['ds'] - future_date).abs().argsort()[0]]
-                    predicted_price = forecast.loc[forecast['ds'] == closest_date, 'yhat'].iloc[0]
-                    
-                    # Calculate profit
-                    future_value = coins_bought * predicted_price
-                    profit = future_value - investment_amount
-                    profit_percentage = (profit / investment_amount) * 100
-                    
-                    profit_data.append({
-                        'Period': period,
-                        'Predicted Price': f'${predicted_price:.2f}',
-                        'Investment Value': f'${future_value:.2f}',
-                        'Profit/Loss': f'${profit:.2f}',
-                        'Return': f'{profit_percentage:.2f}%'
-                    })
-                
-                # Convert to DataFrame and display
-                profit_df = pd.DataFrame(profit_data)
+                profit_df = calculate_profit_table(coins_bought, investment_amount, forecast, forecast_type='prophet')
                 st.table(profit_df)
                 
                 # Add risk warning
@@ -544,6 +514,13 @@ with main_col:
                 """)
                 
                 # Visualization of potential returns
+                forecast_dates = {
+                    '1 Week': 7,
+                    '1 Month': 30,
+                    '3 Months': 90,
+                    '6 Months': 180,
+                    '1 Year': 365
+                }
                 fig_profit = go.Figure()
                 
                 # Add investment amount line
@@ -558,7 +535,7 @@ with main_col:
                 # Add predicted value line
                 fig_profit.add_trace(go.Scatter(
                     x=[period for period in forecast_dates.keys()],
-                    y=[float(data['Investment Value'].replace('$', '')) for data in profit_data],
+                    y=[float(data['Investment Value'].replace('$', '')) for data in profit_df.to_dict('records')],
                     name='Predicted Value',
                     line=dict(color='green'),
                     mode='lines+markers'
@@ -649,26 +626,7 @@ with main_col:
                 # Plot future predictions
                 future_dates = pd.date_range(start=data.index[-1], periods=period+1)[1:]
                 st.subheader(f'Future Predictions for {n_years} years')
-                fig4 = go.Figure()
-                fig4.add_trace(go.Scatter(
-                    x=data.index,
-                    y=data[selected_stock],
-                    name='Historical',
-                    line=dict(color='blue', width=2)
-                ))
-                fig4.add_trace(go.Scatter(
-                    x=future_dates,
-                    y=future_predictions,
-                    name='Forecast',
-                    line=dict(color='red', width=2)
-                ))
-                fig4.update_layout(
-                    title=f'{selected_stock} Price Forecast',
-                    xaxis_title='Date',
-                    yaxis_title='Price (USD)',
-                    template='plotly_dark',
-                    height=600
-                )
+                fig4 = plot_arima_forecast(data, selected_stock, future_dates, future_predictions, n_years)
                 st.plotly_chart(fig4)
 
                 # Profit Calculator for ARIMA
@@ -689,34 +647,7 @@ with main_col:
                 
                 # Create profit calculation table
                 st.write('Potential Profit Calculations')
-                
-                # Get forecasted prices for different timeframes
-                forecast_dates = {
-                    '1 Week': 7,
-                    '1 Month': 30,
-                    '3 Months': 90,
-                    '6 Months': 180,
-                    '1 Year': 365
-                }
-                
-                profit_data = []
-                
-                for period_label, days in forecast_dates.items():
-                    if days <= len(future_predictions):
-                        predicted_price = future_predictions[days-1]
-                        future_value = coins_bought * predicted_price
-                        profit = future_value - investment_amount
-                        profit_percentage = (profit / investment_amount) * 100
-                        
-                        profit_data.append({
-                            'Period': period_label,
-                            'Predicted Price': f'${predicted_price:.2f}',
-                            'Investment Value': f'${future_value:.2f}',
-                            'Profit/Loss': f'${profit:.2f}',
-                            'Return': f'{profit_percentage:.2f}%'
-                        })
-                
-                profit_df = pd.DataFrame(profit_data)
+                profit_df = calculate_profit_table(coins_bought, investment_amount, future_predictions, forecast_type='arima')
                 st.table(profit_df)
                 
                 st.warning("""
@@ -784,32 +715,12 @@ with main_col:
                 # Plot future predictions
                 future_dates = pd.date_range(start=data.index[-1], periods=period+1)[1:]
                 st.subheader(f'Future Predictions for {n_years} years')
-                fig4 = go.Figure()
-                fig4.add_trace(go.Scatter(
-                    x=data.index,
-                    y=data[selected_stock],
-                    name='Historical',
-                    line=dict(color='blue', width=2)
-                ))
-                fig4.add_trace(go.Scatter(
-                    x=future_dates,
-                    y=future_predictions,
-                    name='Forecast',
-                    line=dict(color='red', width=2)
-                ))
-                fig4.update_layout(
-                    title=f'{selected_stock} Price Forecast',
-                    xaxis_title='Date',
-                    yaxis_title='Price (USD)',
-                    template='plotly_dark',
-                    height=600
-                )
+                fig4 = plot_xgboost_forecast(data, selected_stock, future_dates, future_predictions, n_years)
                 st.plotly_chart(fig4)
 
                 # Profit Calculator for XGBoost
                 st.subheader('Investment Profit Calculator')
                 current_price = data[selected_stock].iloc[-1]
-                
                 col1, col2 = st.columns(2)
                 with col1:
                     investment_amount = st.number_input('Investment Amount (USD)', 
@@ -817,42 +728,12 @@ with main_col:
                                                       value=1000.0, 
                                                       step=100.0,
                                                       key='xgb_investment')
-                
                 with col2:
                     coins_bought = investment_amount / current_price
                     st.write(f'Coins you can buy: {coins_bought:.8f}')
-                
                 # Create profit calculation table
                 st.write('Potential Profit Calculations')
-                
-                # Get forecasted prices for different timeframes
-                today = pd.Timestamp.now()
-                forecast_dates = {
-                    '1 Week': 7,
-                    '1 Month': 30,
-                    '3 Months': 90,
-                    '6 Months': 180,
-                    '1 Year': 365
-                }
-                
-                profit_data = []
-                
-                for period, days in forecast_dates.items():
-                    if days < len(future_predictions):
-                        predicted_price = future_predictions[days-1]
-                        future_value = coins_bought * predicted_price
-                        profit = future_value - investment_amount
-                        profit_percentage = (profit / investment_amount) * 100
-                        
-                        profit_data.append({
-                            'Period': period,
-                            'Predicted Price': f'${predicted_price:.2f}',
-                            'Investment Value': f'${future_value:.2f}',
-                            'Profit/Loss': f'${profit:.2f}',
-                            'Return': f'{profit_percentage:.2f}%'
-                        })
-                
-                profit_df = pd.DataFrame(profit_data)
+                profit_df = calculate_profit_table(coins_bought, investment_amount, future_predictions, forecast_type='xgboost')
                 st.table(profit_df)
                 
                 st.warning("""
@@ -928,32 +809,12 @@ with main_col:
                 # Plot future predictions
                 future_dates = pd.date_range(start=data.index[-1], periods=period+1)[1:]
                 st.subheader(f'Future Predictions for {n_years} years')
-                fig4 = go.Figure()
-                fig4.add_trace(go.Scatter(
-                    x=data.index,
-                    y=data[selected_stock],
-                    name='Historical',
-                    line=dict(color='blue', width=2)
-                ))
-                fig4.add_trace(go.Scatter(
-                    x=future_dates,
-                    y=future_predictions.flatten(),
-                    name='Forecast',
-                    line=dict(color='red', width=2)
-                ))
-                fig4.update_layout(
-                    title=f'{selected_stock} Price Forecast',
-                    xaxis_title='Date',
-                    yaxis_title='Price (USD)',
-                    template='plotly_dark',
-                    height=600
-                )
+                fig4 = plot_lstm_forecast(data, selected_stock, future_dates, future_predictions, n_years)
                 st.plotly_chart(fig4)
 
                 # Profit Calculator for LSTM
                 st.subheader('Investment Profit Calculator')
                 current_price = data[selected_stock].iloc[-1]
-                
                 col1, col2 = st.columns(2)
                 with col1:
                     investment_amount = st.number_input('Investment Amount (USD)', 
@@ -961,42 +822,12 @@ with main_col:
                                                       value=1000.0, 
                                                       step=100.0,
                                                       key='lstm_investment')
-                
                 with col2:
                     coins_bought = investment_amount / current_price
                     st.write(f'Coins you can buy: {coins_bought:.8f}')
-                
                 # Create profit calculation table
                 st.write('Potential Profit Calculations')
-                
-                # Get forecasted prices for different timeframes
-                today = pd.Timestamp.now()
-                forecast_dates = {
-                    '1 Week': 7,
-                    '1 Month': 30,
-                    '3 Months': 90,
-                    '6 Months': 180,
-                    '1 Year': 365
-                }
-                
-                profit_data = []
-                
-                for period, days in forecast_dates.items():
-                    if days < len(future_predictions):
-                        predicted_price = future_predictions[days-1][0]
-                        future_value = coins_bought * predicted_price
-                        profit = future_value - investment_amount
-                        profit_percentage = (profit / investment_amount) * 100
-                        
-                        profit_data.append({
-                            'Period': period,
-                            'Predicted Price': f'${predicted_price:.2f}',
-                            'Investment Value': f'${future_value:.2f}',
-                            'Profit/Loss': f'${profit:.2f}',
-                            'Return': f'{profit_percentage:.2f}%'
-                        })
-                
-                profit_df = pd.DataFrame(profit_data)
+                profit_df = calculate_profit_table(coins_bought, investment_amount, future_predictions, forecast_type='lstm')
                 st.table(profit_df)
                 
                 st.warning("""
