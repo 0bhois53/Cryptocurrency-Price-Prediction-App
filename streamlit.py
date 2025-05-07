@@ -233,7 +233,7 @@ with main_col:
                 # Save the complete dataset
                 data.to_csv('crypto_data.csv', index=True, header=True)
                 
-                # Process the data for LSTM
+                # Process the data 
                 lstm_data = data['Close'].copy()
                 lstm_data.to_csv('LSTM_crypto_data.csv', index=True, header=True)
                 
@@ -350,8 +350,7 @@ with main_col:
             
             st.subheader('Raw data')
             st.write(data.head())
-            st.write("Last few records:")
-            st.write(data.tail())
+            
 
             # Plot raw data
             def plot_raw_data():
