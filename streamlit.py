@@ -133,63 +133,31 @@ with main_col:
     # Model-specific hyperparameters
     if selected_model == 'ARIMA':
         st.sidebar.subheader('ARIMA Parameters')
-        auto_optimize = st.sidebar.checkbox('Auto-optimize parameters', value=True)
-        
-        if not auto_optimize:
-            p = st.sidebar.slider('p (AR order)', 0, 5, 2)
-            d = st.sidebar.slider('d (Difference order)', 0, 2, 1)
-            q = st.sidebar.slider('q (MA order)', 0, 5, 2)
-        else:
-            st.sidebar.write('Parameters will be automatically optimized')
-            p, d, q = None, None, None  # Will be set by optimization
+        p = st.sidebar.slider('p (AR order)', 0, 5, 2)
+        d = st.sidebar.slider('d (Difference order)', 0, 2, 1)
+        q = st.sidebar.slider('q (MA order)', 0, 5, 2)
 
         # Add confidence interval selection
         confidence_interval = st.sidebar.slider('Confidence Interval (%)', 80, 99, 95)
     elif selected_model == 'XGBoost':
         st.sidebar.subheader('XGBoost Parameters')
-        auto_optimize = st.sidebar.checkbox('Auto-optimize parameters', value=False)
-        
-        if not auto_optimize:
-            max_depth = st.sidebar.slider('max_depth', 3, 10, 6)
-            n_estimators = st.sidebar.slider('n_estimators', 50, 300, 100)
-            learning_rate = st.sidebar.slider('learning_rate', 0.01, 0.3, 0.1)
-        else:
-            st.sidebar.write('Parameters will be automatically optimized')
-            max_depth = None
-            n_estimators = None
-            learning_rate = None
+        max_depth = st.sidebar.slider('max_depth', 3, 10, 6)
+        n_estimators = st.sidebar.slider('n_estimators', 50, 300, 100)
+        learning_rate = st.sidebar.slider('learning_rate', 0.01, 0.3, 0.1)
 
     elif selected_model == 'LSTM':
         st.sidebar.subheader('LSTM Parameters')
-        auto_optimize = st.sidebar.checkbox('Auto-optimize parameters', value=False)
-        
-        if not auto_optimize:
-            seq_length = st.sidebar.slider('Sequence Length', 10, 60, 30)
-            units = st.sidebar.slider('units', 32, 128, 50)
-            dropout = st.sidebar.slider('dropout', 0.0, 0.5, 0.2)
-            epochs = st.sidebar.slider('epochs', 10, 100, 50)
-        else:
-            st.sidebar.write('Parameters will be automatically optimized')
-            seq_length = st.sidebar.slider('Sequence Length', 10, 60, 30)  # Keep this as it's needed for sequence creation
-            units = None
-            dropout = None
-            epochs = None
+        seq_length = st.sidebar.slider('Sequence Length', 10, 60, 30)
+        units = st.sidebar.slider('units', 32, 128, 50)
+        dropout = st.sidebar.slider('dropout', 0.0, 0.5, 0.2)
+        epochs = st.sidebar.slider('epochs', 10, 100, 50)
 
     elif selected_model == 'Prophet':
         st.sidebar.subheader('Prophet Parameters')
-        enable_tuning = st.sidebar.checkbox('Enable Hyperparameter Tuning', value=False)
-        if enable_tuning:
-            st.sidebar.write('Tuning Parameters:')
-            changepoint_prior_scale = st.sidebar.slider('Changepoint Prior Scale (trend flexibility)', 0.001, 0.5, 0.05)
-            seasonality_prior_scale = st.sidebar.slider('Seasonality Prior Scale', 0.01, 10.0, 10.0)
-            holidays_prior_scale = st.sidebar.slider('Holidays Prior Scale', 0.01, 10.0, 10.0)
-            seasonality_mode = st.sidebar.selectbox('Seasonality Mode', ['additive', 'multiplicative'])
-        else:
-            # Default values
-            changepoint_prior_scale = 0.05
-            seasonality_prior_scale = 10.0
-            holidays_prior_scale = 10.0
-            seasonality_mode = 'additive'
+        changepoint_prior_scale = st.sidebar.slider('Changepoint Prior Scale (trend flexibility)', 0.001, 0.5, 0.05)
+        seasonality_prior_scale = st.sidebar.slider('Seasonality Prior Scale', 0.01, 10.0, 10.0)
+        holidays_prior_scale = st.sidebar.slider('Holidays Prior Scale', 0.01, 10.0, 10.0)
+        seasonality_mode = st.sidebar.selectbox('Seasonality Mode', ['additive', 'multiplicative'])
 
     # Function to fetch crypto news
     def fetch_crypto_news():
@@ -446,32 +414,13 @@ with main_col:
             test_data = df_train[train_size:]
 
             if selected_model == 'Prophet':
-                if enable_tuning:
-                    st.subheader('Hyperparameter Tuning')
-                    with st.spinner('Performing hyperparameter optimization...'):
-                        best_params, tuning_results = optimize_hyperparameters(train_data)
-                        
-                    st.write('Best Parameters Found:')
-                    st.write(best_params)
-                    
-                    st.write('Top 5 Parameter Combinations:')
-                    st.write(tuning_results.nsmallest(5, 'rmse'))
-                    
-                    # Use the best parameters for the model
-                    m = Prophet(
-                        changepoint_prior_scale=best_params['changepoint_prior_scale'],
-                        seasonality_prior_scale=best_params['seasonality_prior_scale'],
-                        holidays_prior_scale=best_params['holidays_prior_scale'],
-                        seasonality_mode=best_params['seasonality_mode']
-                    )
-                else:
-                    # Use default or user-selected parameters
-                    m = Prophet(
-                        changepoint_prior_scale=changepoint_prior_scale,
-                        seasonality_prior_scale=seasonality_prior_scale,
-                        holidays_prior_scale=holidays_prior_scale,
-                        seasonality_mode=seasonality_mode
-                    )
+                # Use default or user-selected parameters
+                m = Prophet(
+                    changepoint_prior_scale=changepoint_prior_scale,
+                    seasonality_prior_scale=seasonality_prior_scale,
+                    holidays_prior_scale=holidays_prior_scale,
+                    seasonality_mode=seasonality_mode
+                )
 
                 m.fit(train_data)
 
@@ -629,12 +578,11 @@ with main_col:
                 st.plotly_chart(fig_profit, use_container_width=True)
 
             elif selected_model == 'ARIMA':
-                # Train the model with auto-optimization if selected
-                model = train_arima(data[selected_stock], p, d, q, auto_optimize)
+                # Train the model
+                model = train_arima(data[selected_stock], p, d, q)
                 
                 # Make predictions for the test period (last 30 days)
                 test_predictions = model.forecast(steps=30)
-                conf_int = model.get_forecast(steps=30).conf_int(alpha=(100-confidence_interval)/100)
                 
                 # Calculate metrics using only the test period
                 y_true = data[selected_stock].values[-30:]
@@ -670,6 +618,7 @@ with main_col:
                 ))
                 
                 # Add confidence intervals
+                conf_int = model.get_forecast(steps=30).conf_int(alpha=(100-confidence_interval)/100)
                 fig3.add_trace(go.Scatter(
                     x=data.index[-30:],
                     y=conf_int.iloc[:, 0],
@@ -786,8 +735,7 @@ with main_col:
                     data[selected_stock].values,
                     max_depth,
                     n_estimators,
-                    learning_rate,
-                    auto_optimize
+                    learning_rate
                 )
 
                 # Make predictions
@@ -923,8 +871,7 @@ with main_col:
                     seq_length,
                     units,
                     dropout,
-                    epochs,
-                    auto_optimize
+                    epochs
                 )
 
                 # Make predictions
