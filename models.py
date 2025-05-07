@@ -3,6 +3,7 @@ import pandas as pd
 from prophet import Prophet
 from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error, mean_absolute_error, r2_score
 from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 import xgboost as xgb
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout
@@ -116,7 +117,7 @@ def train_lstm(data, seq_length, units=None, dropout=None, epochs=None, auto_opt
     
     return model, scaler, (X_train, X_test, y_train, y_test)
 
-def optimize_arima_parameters(data, max_p=5, max_d=2, max_q=5):
+def optimize_arima_parameters(data, max_p=5, max_d=3, max_q=5):
     best_aic = float('inf')
     best_params = None
     
@@ -149,7 +150,7 @@ def optimize_arima_parameters(data, max_p=5, max_d=2, max_q=5):
     progress_text.empty()
     return best_params
 
-def train_arima(data, p, d, q, auto_optimize=False):
+def train_arima(data, p, d, q, P=0, D=0, Q=0, s=0, auto_optimize=False):
     # Convert data to time series
     index = pd.date_range(start=data.index[0], end=data.index[-1], freq='D')
     ts = pd.Series(data.values, index=index)
@@ -159,17 +160,14 @@ def train_arima(data, p, d, q, auto_optimize=False):
         p, d, q = optimize_arima_parameters(ts)
         st.write(f"Optimal ARIMA parameters found: p={p}, d={d}, q={q}")
     
-    # Add exogenous variables if available
-    exog = None
-    if isinstance(data, pd.DataFrame) and len(data.columns) > 1:
-        exog = data.drop(columns=[data.columns[0]])
+    ts = ts.interpolate()  # or ts = ts.fillna(method='ffill')
     
-    # Fit ARIMA model with optional exogenous variables
-    model = ARIMA(ts, order=(p, d, q), exog=exog)
-    results = model.fit()
+    # Fit SARIMAX model (ARIMA if seasonal_order is all zeros)
+    model = SARIMAX(ts, order=(p, d, q), seasonal_order=(P, D, Q, s) if s > 0 else (0, 0, 0, 0))
+    results = model.fit(disp=False)
     
     # Display model summary in expandable section
-    with st.expander("View ARIMA Model Summary"):
+    with st.expander("View SARIMAX Model Summary"):
         st.text(str(results.summary()))
     
     return results

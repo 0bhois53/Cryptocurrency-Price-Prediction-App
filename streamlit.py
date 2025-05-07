@@ -1,6 +1,4 @@
 import streamlit as st
-
-# Must be the first Streamlit command
 st.set_page_config(layout="wide")
 
 from datetime import date, datetime, timedelta
@@ -584,6 +582,9 @@ with main_col:
                 # Make predictions for the test period (last 30 days)
                 test_predictions = model.forecast(steps=30)
                 
+                # Make future predictions for the selected period
+                future_predictions = model.forecast(steps=period)
+                
                 # Calculate metrics using only the test period
                 y_true = data[selected_stock].values[-30:]
                 y_pred = test_predictions
@@ -658,7 +659,7 @@ with main_col:
                 ))
                 fig4.add_trace(go.Scatter(
                     x=future_dates,
-                    y=test_predictions,
+                    y=future_predictions,
                     name='Forecast',
                     line=dict(color='red', width=2)
                 ))
@@ -691,7 +692,6 @@ with main_col:
                 st.write('Potential Profit Calculations')
                 
                 # Get forecasted prices for different timeframes
-                today = pd.Timestamp.now()
                 forecast_dates = {
                     '1 Week': 7,
                     '1 Month': 30,
@@ -702,15 +702,15 @@ with main_col:
                 
                 profit_data = []
                 
-                for period, days in forecast_dates.items():
-                    if days < len(test_predictions):
-                        predicted_price = test_predictions[days-1]
+                for period_label, days in forecast_dates.items():
+                    if days <= len(future_predictions):
+                        predicted_price = future_predictions[days-1]
                         future_value = coins_bought * predicted_price
                         profit = future_value - investment_amount
                         profit_percentage = (profit / investment_amount) * 100
                         
                         profit_data.append({
-                            'Period': period,
+                            'Period': period_label,
                             'Predicted Price': f'${predicted_price:.2f}',
                             'Investment Value': f'${future_value:.2f}',
                             'Profit/Loss': f'${profit:.2f}',
