@@ -185,7 +185,7 @@ with main_col:
                         # Load and display the news image
                         response = requests.get(item['imageurl'])
                         img = Image.open(BytesIO(response.content))
-                        st.image(img, use_column_width=True)
+                        st.image(img, use_container_width=True)
                     except:
                         # Display a placeholder if image loading fails
                         st.write("📰")
