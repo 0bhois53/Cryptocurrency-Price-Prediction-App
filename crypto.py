@@ -36,6 +36,12 @@ from forecast_plots import (
     plot_xgboost_forecast,
     plot_lstm_forecast
 )
+from buy_sell_signals import (
+    buy_sell_signals_prophet,
+    buy_sell_signals_arima,
+    buy_sell_signals_xgboost,
+    buy_sell_signals_lstm
+)
 
 # Custom CSS
 st.markdown("""
@@ -141,30 +147,52 @@ with main_col:
     else:
         st.info("Unable to fetch the latest price for this coin.")
 
-    # Model hyperparameters
+    # --- Default values for all models ---
+    DEFAULTS = {
+        'arima_p': 2,
+        'arima_d': 1,
+        'arima_q': 2,
+        'arima_conf': 95,
+        'xgb_max_depth': 6,
+        'xgb_n_estimators': 100,
+        'xgb_learning_rate': 0.1,
+        'lstm_forecast_horizon': 30,
+        'lstm_max_steps': 750,
+        'prophet_changepoint_prior_scale': 0.05,
+        'prophet_seasonality_prior_scale': 10.0,
+        'prophet_holidays_prior_scale': 10.0,
+        'prophet_seasonality_mode': 'additive',
+    }
+
+    # --- Reset Parameters Button ---
+    if st.sidebar.button('Reset Parameters'):
+        for k, v in DEFAULTS.items():
+            st.session_state[k] = v
+
+    # --- ARIMA Parameters ---
     if selected_model == 'ARIMA':
         st.sidebar.subheader('ARIMA Parameters')
         use_auto_arima = st.sidebar.checkbox('Use Auto-ARIMA', value=False, help="Automatically select the best ARIMA parameters (p, d, q) for your data.")
         if not use_auto_arima:
-            p = st.sidebar.slider('p (AR order)', 0, 5, 2)
-            d = st.sidebar.slider('d (Difference order)', 0, 2, 1)
-            q = st.sidebar.slider('q (MA order)', 0, 5, 2)
-            confidence_interval = st.sidebar.slider('Confidence Interval (%)', 80, 99, 95)
-    elif selected_model == 'XGBoost':
+            p = st.sidebar.slider('p (AR order)', 0, 5, DEFAULTS['arima_p'], key='arima_p')
+            d = st.sidebar.slider('d (Difference order)', 0, 2, DEFAULTS['arima_d'], key='arima_d')
+            q = st.sidebar.slider('q (MA order)', 0, 5, DEFAULTS['arima_q'], key='arima_q')
+            confidence_interval = st.sidebar.slider('Confidence Interval (%)', 80, 99, DEFAULTS['arima_conf'], key='arima_conf')
+    elif selected_model in ['XGBoost', 'Stacked (XGBoost + LSTM)']:
         st.sidebar.subheader('XGBoost Parameters')
-        max_depth = st.sidebar.slider('max_depth', 3, 10, 6)
-        n_estimators = st.sidebar.slider('n_estimators', 50, 300, 100)
-        learning_rate = st.sidebar.slider('learning_rate', 0.01, 0.3, 0.1)
+        max_depth = st.sidebar.slider('max_depth', 3, 10, DEFAULTS['xgb_max_depth'], key='xgb_max_depth')
+        n_estimators = st.sidebar.slider('n_estimators', 50, 300, DEFAULTS['xgb_n_estimators'], key='xgb_n_estimators')
+        learning_rate = st.sidebar.slider('learning_rate', 0.01, 0.3, DEFAULTS['xgb_learning_rate'], key='xgb_learning_rate')
     elif selected_model == 'LSTM':
         st.sidebar.subheader('LSTM Parameters')
-        forecast_horizon = st.sidebar.slider('Forecast Horizon (days)', 30, 365, 30, key='lstm_forecast_horizon', help="How many days into the future to predict. Longer horizons are less accurate.")
-        max_steps = st.sidebar.slider('Max Training Steps', 100, 750, 750, key='lstm_max_steps', help="Number of training steps for the LSTM model. More steps may improve accuracy but take longer.")
+        forecast_horizon = st.sidebar.slider('Forecast Horizon (days)', 30, 365, DEFAULTS['lstm_forecast_horizon'], key='lstm_forecast_horizon', help="How many days into the future to predict. Longer horizons are less accurate.")
+        max_steps = st.sidebar.slider('Max Training Steps', 100, 750, DEFAULTS['lstm_max_steps'], key='lstm_max_steps', help="Number of training steps for the LSTM model. More steps may improve accuracy but take longer.")
     elif selected_model == 'Prophet':
         st.sidebar.subheader('Prophet Parameters')
-        changepoint_prior_scale = st.sidebar.slider('Changepoint Prior Scale', 0.001, 0.5, 0.05)
-        seasonality_prior_scale = st.sidebar.slider('Seasonality Prior Scale', 0.01, 10.0, 10.0)
-        holidays_prior_scale = st.sidebar.slider('Holidays Prior Scale', 0.01, 10.0, 10.0)
-        seasonality_mode = st.sidebar.selectbox('Seasonality Mode', ['additive', 'multiplicative'])
+        changepoint_prior_scale = st.sidebar.slider('Changepoint Prior Scale', 0.001, 0.5, DEFAULTS['prophet_changepoint_prior_scale'], key='prophet_changepoint_prior_scale')
+        seasonality_prior_scale = st.sidebar.slider('Seasonality Prior Scale', 0.01, 10.0, DEFAULTS['prophet_seasonality_prior_scale'], key='prophet_seasonality_prior_scale')
+        holidays_prior_scale = st.sidebar.slider('Holidays Prior Scale', 0.01, 10.0, DEFAULTS['prophet_holidays_prior_scale'], key='prophet_holidays_prior_scale')
+        seasonality_mode = st.sidebar.selectbox('Seasonality Mode', ['additive', 'multiplicative'], index=0 if DEFAULTS['prophet_seasonality_mode']=='additive' else 1, key='prophet_seasonality_mode')
 
     # Function to fetch crypto news
     def fetch_crypto_news():
@@ -222,7 +250,7 @@ with main_col:
                     
                 data.to_csv('crypto_data.csv', index=True, header=True)
                 lstm_data = data['Close'].copy()
-                lstm_data.to_csv('LSTM_crypto_data.csv', index=True, header=True)
+                lstm_data.to_csv('crypto_data.csv', index=True, header=True)
                 
                 return data
             except Exception as e:
@@ -232,10 +260,10 @@ with main_col:
         @st.cache_data
         def load_data():
             try:
-                if not os.path.exists('LSTM_crypto_data.csv'):
+                if not os.path.exists('crypto_data.csv'):
                     data = download_data()
                 
-                data = pd.read_csv('LSTM_crypto_data.csv', 
+                data = pd.read_csv('crypto_data.csv', 
                                   sep=',',
                                   encoding='utf-8',
                                   index_col=0,
@@ -333,7 +361,7 @@ with main_col:
                 # Calculate metrics
                 metrics = calculate_metrics(test_actual, test_pred)
                 
-                # Display metrics in a nice format
+                
                 col1, col2 = st.columns(2)
                 with col1:
                     st.metric("Mean Absolute Error (MAE)", f"${metrics['MAE']:.2f}")
@@ -342,30 +370,10 @@ with main_col:
                     st.metric("Mean Absolute Percentage Error (MAPE)", f"{metrics['MAPE']:.2f}%")
                     st.metric("R² Score", f"{metrics['R2 Score']:.4f}")
 
-                # --- Buy/Sell/Hold Signal Table ---
+                
                 current_price = data[selected_stock].iloc[-1]
-                signal_periods = {'1 Week': 7, '2 Weeks': 14, '1 Month': 30}
-                signal_data = []
-                for label, days in signal_periods.items():
-                    # Find forecasted price closest to days ahead
-                    if days < len(forecast):
-                        future_row = forecast.iloc[days]
-                        forecasted_price = future_row['yhat']
-                        pct_change = (forecasted_price - current_price) / current_price * 100
-                        if pct_change > 2:
-                            signal = 'Buy'
-                        elif pct_change < -2:
-                            signal = 'Sell'
-                        else:
-                            signal = 'Hold'
-                        signal_data.append({
-                            'Period': label,
-                            'Forecasted Price': f"${forecasted_price:.2f}",
-                            'Change (%)': f"{pct_change:.2f}%",
-                            'Signal': signal
-                        })
                 st.subheader('Buy/Sell Signals Based on Prophet Forecast')
-                st.table(pd.DataFrame(signal_data))
+                st.table(buy_sell_signals_prophet(data, selected_stock, forecast, current_price))
 
             elif selected_model == 'ARIMA':
                 if use_auto_arima:
@@ -386,14 +394,13 @@ with main_col:
 
                 # Calculate and display ARIMA model performance metrics
                 st.subheader('Model Performance Metrics')
-                # Get predictions for the test period
+                
                 if use_auto_arima:
                     # Use last 30 in-sample predictions for metrics
                     test_predictions = model.predict_in_sample()[-30:]
                 else:
                     test_predictions = model.predict(start=len(data)-30, end=len(data)-1)
                 test_actual = data[selected_stock].iloc[-30:].values
-                # Ensure both arrays have the same length
                 min_length = min(len(test_actual), len(test_predictions))
                 test_actual = test_actual[:min_length]
                 test_predictions = test_predictions[:min_length]
@@ -409,50 +416,88 @@ with main_col:
                     st.metric("Mean Absolute Percentage Error (MAPE)", f"{metrics['MAPE']:.2f}%")
                     st.metric("R² Score", f"{metrics['R2 Score']:.4f}")
 
-                # --- Buy/Sell/Hold Signal Table ---
+                
                 current_price = data[selected_stock].iloc[-1]
-                signal_periods = {'1 Week': 7, '2 Weeks': 14, '1 Month': 30}
-                signal_data = []
-                for label, days in signal_periods.items():
-                    if days <= len(future_predictions):
-                        forecasted_price = future_predictions[days-1]
-                        pct_change = (forecasted_price - current_price) / current_price * 100
-                        if pct_change > 2:
-                            signal = 'Buy'
-                        elif pct_change < -2:
-                            signal = 'Sell'
-                        else:
-                            signal = 'Hold'
-                        signal_data.append({
-                            'Period': label,
-                            'Forecasted Price': f"${forecasted_price:.2f}",
-                            'Change (%)': f"{pct_change:.2f}%",
-                            'Signal': signal
-                        })
                 st.subheader('Buy/Sell Signals Based on ARIMA Forecast')
-                st.table(pd.DataFrame(signal_data))
+                st.table(buy_sell_signals_arima(current_price, future_predictions))
 
             elif selected_model == 'XGBoost':
-                X = np.arange(len(data)).reshape(-1, 1)
-                y = data[selected_stock].values
+                df = pd.DataFrame(index=data.index)
+                df[selected_stock] = data[selected_stock]
                 
-                # Split data for training and testing
-                train_size = len(data) - 30
+                
+                for lag in [1, 3, 7]:
+                    df[f'{selected_stock}_lag_{lag}'] = df[selected_stock].shift(lag)
+                
+                
+                df[f'{selected_stock}_rolling_7'] = df[selected_stock].rolling(7).mean()
+                
+                df[f'{selected_stock}_pct_change'] = df[selected_stock].pct_change() * 100
+                
+                
+                df = df.dropna()
+                
+                feature_cols = [col for col in df.columns if col != selected_stock]
+                X = df[feature_cols]
+                y = df[selected_stock]
+                
+                # Split data 
+                train_size = len(df) - 30
                 X_train = X[:train_size]
                 X_test = X[train_size:]
                 y_train = y[:train_size]
                 y_test = y[train_size:]
                 
                 model = train_xgboost(X_train, y_train, max_depth, n_estimators, learning_rate)
-                future_data = np.arange(len(data), len(data) + period).reshape(-1, 1)
-                future_predictions = model.predict(future_data)
+                
+                # Prepare future data 
+                last_data = df.iloc[-1:].copy()
+                future_predictions = []
+                
+                for _ in range(period):
+                    
+                    pred = model.predict(last_data[feature_cols])[0]
+                    future_predictions.append(pred)
+                    
+                    # Update features for next prediction
+                    new_row = last_data.copy()
+                    new_row[selected_stock] = pred
+                    new_row[f'{selected_stock}_lag_1'] = last_data[selected_stock].iloc[0]
+                    new_row[f'{selected_stock}_lag_3'] = df[selected_stock].iloc[-3]
+                    new_row[f'{selected_stock}_lag_7'] = df[selected_stock].iloc[-7]
+                    new_row[f'{selected_stock}_rolling_7'] = df[selected_stock].iloc[-7:].mean()
+                    new_row[f'{selected_stock}_pct_change'] = (pred - last_data[selected_stock].iloc[0]) / last_data[selected_stock].iloc[0] * 100
+                    
+                    last_data = new_row
                 
                 st.subheader(f'Future Predictions for {n_years} years')
                 future_dates = pd.date_range(start=data.index[-1], periods=period+1)[1:]
-                fig4 = plot_xgboost_forecast(data, selected_stock, future_dates, future_predictions, n_years)
+                # Anchor forecast 
+                anchored_forecast = [data[selected_stock].iloc[-1]] + list(future_predictions)
+                anchored_dates = [data.index[-1]] + list(future_dates)
+                fig4 = go.Figure()
+                fig4.add_trace(go.Scatter(
+                    x=data.index,
+                    y=data[selected_stock],
+                    name='Historical',
+                    line=dict(color='blue', width=2)
+                ))
+                fig4.add_trace(go.Scatter(
+                    x=anchored_dates,
+                    y=anchored_forecast,
+                    name='Forecast',
+                    line=dict(color='red', width=2)
+                ))
+                fig4.update_layout(
+                    title=f'{selected_stock} Price Forecast',
+                    xaxis_title='Date',
+                    yaxis_title='Price (USD)',
+                    template='plotly_dark',
+                    height=600
+                )
                 st.plotly_chart(fig4)
 
-                # display XGBoost model performance metrics
+                # Display XGBoost model metrics
                 st.subheader('Model Performance Metrics')
                 test_predictions = model.predict(X_test)
                 
@@ -470,26 +515,8 @@ with main_col:
 
                 # --- Buy/Sell/Hold Signal Table ---
                 current_price = data[selected_stock].iloc[-1]
-                signal_periods = {'1 Week': 7, '2 Weeks': 14, '1 Month': 30}
-                signal_data = []
-                for label, days in signal_periods.items():
-                    if days <= len(future_predictions):
-                        forecasted_price = future_predictions[days-1]
-                        pct_change = (forecasted_price - current_price) / current_price * 100
-                        if pct_change > 2:
-                            signal = 'Buy'
-                        elif pct_change < -2:
-                            signal = 'Sell'
-                        else:
-                            signal = 'Hold'
-                        signal_data.append({
-                            'Period': label,
-                            'Forecasted Price': f"${forecasted_price:.2f}",
-                            'Change (%)': f"{pct_change:.2f}%",
-                            'Signal': signal
-                        })
                 st.subheader('Buy/Sell Signals Based on XGBoost Forecast')
-                st.table(pd.DataFrame(signal_data))
+                st.table(buy_sell_signals_xgboost(current_price, future_predictions))
 
             elif selected_model == 'LSTM':
                 # Train NeuralForecast LSTM model
@@ -559,28 +586,10 @@ with main_col:
                     st.metric("Mean Absolute Percentage Error (MAPE)", f"{metrics['MAPE']:.2f}%")
                     st.metric("R² Score", f"{metrics['R2 Score']:.4f}")
 
-                # --- Buy/Sell/Hold Signal Table ---
+                
                 current_price = data[selected_stock].iloc[-1]
-                signal_periods = {'1 Week': 7, '2 Weeks': 14, '1 Month': 30}
-                signal_data = []
-                for label, days in signal_periods.items():
-                    if days < len(forecast['LSTM']):
-                        forecasted_price = forecast['LSTM'].values[days-1]
-                        pct_change = (forecasted_price - current_price) / current_price * 100
-                        if pct_change > 2:
-                            signal = 'Buy'
-                        elif pct_change < -2:
-                            signal = 'Sell'
-                        else:
-                            signal = 'Hold'
-                        signal_data.append({
-                            'Period': label,
-                            'Forecasted Price': f"${forecasted_price:.2f}",
-                            'Change (%)': f"{pct_change:.2f}%",
-                            'Signal': signal
-                        })
                 st.subheader('Buy/Sell Signals Based on LSTM Forecast')
-                st.table(pd.DataFrame(signal_data))
+                st.table(buy_sell_signals_lstm(current_price, forecast))
 
             # Profit Calculator
             st.subheader('Investment Profit Calculator')
@@ -604,7 +613,6 @@ with main_col:
             elif selected_model == 'XGBoost':
                 profit_df = calculate_profit_table(coins_bought, investment_amount, future_predictions, forecast_type='xgboost')
             elif selected_model == 'LSTM':
-                # Convert forecast to the expected format for profit calculation
                 lstm_forecast = pd.DataFrame({
                     'ds': future_dates,
                     'yhat': forecast['LSTM'].values

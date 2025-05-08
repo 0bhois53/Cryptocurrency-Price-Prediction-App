@@ -17,13 +17,29 @@ def train_arima(data, p, d, q):
     return model_fit
 
 def train_xgboost(X_train, y_train, max_depth, n_estimators, learning_rate):
-    # Create and train XGBoost model
+    # Create and train XGBoost model with early stopping
     model = xgb.XGBRegressor(
         max_depth=max_depth,
         n_estimators=n_estimators,
-        learning_rate=learning_rate
+        learning_rate=learning_rate,
+        early_stopping_rounds=50,
+        eval_metric='rmse'
     )
-    model.fit(X_train, y_train)
+    
+    # Create validation set
+    val_size = int(0.2 * len(X_train))
+    X_val = X_train[-val_size:]
+    y_val = y_train[-val_size:]
+    X_train = X_train[:-val_size]
+    y_train = y_train[:-val_size]
+    
+    # Fit model with early stopping
+    model.fit(
+        X_train, y_train,
+        eval_set=[(X_val, y_val)],
+        verbose=False
+    )
+    
     return model
 
 def train_prophet(train_data, params):
