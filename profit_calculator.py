@@ -2,10 +2,7 @@ import pandas as pd
 import streamlit as st
 
 def calculate_profit_table(coins_bought, investment_amount, forecast, forecast_type='prophet'):
-    """
-    Returns a DataFrame with profit calculations for different periods.
-    forecast_type: 'prophet' expects a DataFrame with 'ds' and 'yhat', others expect a 1D array-like of prices.
-    """
+   
     if forecast_type in ['prophet', 'lstm']:
         today = pd.Timestamp.now()
         forecast_dates = {
@@ -54,4 +51,4 @@ def calculate_profit_table(coins_bought, investment_amount, forecast, forecast_t
                 })
         return pd.DataFrame(profit_data)
 
-# Removed: max_steps = st.sidebar.slider('Max Training Steps', 100, 750, 750, key='lstm_max_steps') 
+ 
