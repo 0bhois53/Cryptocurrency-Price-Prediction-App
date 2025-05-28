@@ -250,7 +250,7 @@ with main_col:
                     
                 data.to_csv('crypto_data.csv', index=True, header=True)
                 lstm_data = data['Close'].copy()
-                lstm_data.to_csv('crypto_data.csv', index=True, header=True)
+                lstm_data.to_csv('LSTM_crypto_data.csv', index=True, header=True)
                 
                 return data
             except Exception as e:
@@ -260,10 +260,10 @@ with main_col:
         @st.cache_data
         def load_data():
             try:
-                if not os.path.exists('crypto_data.csv'):
+                if not os.path.exists('LSTM_crypto_data.csv'):
                     data = download_data()
                 
-                data = pd.read_csv('crypto_data.csv', 
+                data = pd.read_csv('LSTM_crypto_data.csv', 
                                   sep=',',
                                   encoding='utf-8',
                                   index_col=0,
